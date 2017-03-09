@@ -11,12 +11,102 @@ using System.Threading;
 
 namespace RMDeviceSample
 {
-    public class RemoteMonitorTelemetryData
+    public class RemoteMonitorTelemetryDataClass
     {
         public string DeviceId { get; set; }
         public double Temperature { get; set; }
         public double Humidity { get; set; }
     }
+
+    public class RemoteMonitorTelemetryMetaClass
+    {
+        public string Name { get; set; }
+        public string DisplayName { get; set; }
+        public string Type { get; set; }
+    }
+
+    public class SystemPropertiesClass
+    {
+        public string Manufacturer { get; set; }
+        public string FirmwareVersion { get; set; }
+        public string InstalledRAM { get; set; }
+        public string ModelNumber { get; set; }
+        public string Platform { get; set; }
+        public string Processor { get; set; }
+        public string SerialNumber { get; set; }
+    }
+
+    public class LocaltionPropertiesClass
+    {
+        public double Latitude { get; set; }
+        public double Longitude { get; set; }
+    }
+
+    public class ReportedDevicePropertiesClass
+    {
+        public string DeviceState { get; set; }
+        public LocaltionPropertiesClass Location { get; set; }
+    }
+
+    public class ConifgPropertiesClass
+    {
+        public double TemperatureMeanValue { get; set; }
+        public double TelemetryInterval { get; set; }
+    }
+
+    public class DevicePropertiesClass
+    {
+        public string DeviceID { get; set; }
+        public bool HubEnabledState { get; set; }
+    }
+
+    public class DeviceMetaDataClass
+    {
+        private string objectType = "DeviceInfo";
+        public string ObjectType
+        {
+            get
+            {
+                return objectType;
+            }
+
+            set
+            {
+                objectType = value;
+            }
+        }
+
+        private bool isSimulatedDevice = false;
+        public bool IsSimulatedDevice
+        {
+            get
+            {
+                return isSimulatedDevice;
+            }
+
+            set
+            {
+                isSimulatedDevice = value;
+            }
+        }
+
+        private string version = "1.0";
+        public string Version
+        {
+            get
+            {
+                return version;
+            }
+
+            set
+            {
+                version = value;
+            }
+        }
+        public DevicePropertiesClass DeviceProperties { get; set; }
+        public List<RemoteMonitorTelemetryMetaClass> Telemetry { get; set; }
+    }
+
 
     class Program
     {
@@ -30,7 +120,7 @@ namespace RMDeviceSample
         private static string HostName = "LocalRM51fc6.azure-devices.net";
         private static string DeviceID = "testdeviceceli1";
         private static string PrimaryAuthKey = "NXx3nn+V+jKaWOxttb65xg==";
-        
+
         private static DeviceClient Client = null;
         private static CancellationTokenSource cts = new CancellationTokenSource();
 
@@ -63,42 +153,46 @@ namespace RMDeviceSample
             await Client.UpdateReportedPropertiesAsync(reportedProperties);
         }
 
+        private static async Task<MethodResponse> OnInitiateFirmwareUpdate(MethodRequest request, object userContext)
+        {
+            Console.WriteLine("Simulated firmware update initiated, using: {0}", JsonConvert.DeserializeObject<dynamic>(request.DataAsJson).FwPackageURI);
+
+            // Complete the response
+            return await Task.FromResult(BuildMethodRespose("\"Initiating Firmware Update\""));
+            // Add logic here to perform the firmware update asynchronously
+        }
+
+        private static async Task<MethodResponse> OnReboot(MethodRequest request, object userContext)
+        {
+            // Implement actual logic here.
+            Console.WriteLine("Simulated reboot...");
+
+            // Complete the response
+            return await Task.FromResult(BuildMethodRespose("\"Rebooting device\""));
+        }
+
+        private static MethodResponse BuildMethodRespose(object response, int status = 200)
+        {
+            return new MethodResponse(Encoding.UTF8.GetBytes(JsonConvert.SerializeObject(response)), status);
+        }
+
         private static async Task SendDeviceInfoAsync(CancellationToken token, Func<object, Task> sendMessageAsync)
         {
-            dynamic device = new ExpandoObject();
-            device.DeviceProperties = new ExpandoObject();
-
+            DeviceMetaDataClass device = new DeviceMetaDataClass();
             // Device basic properties
-            device.DeviceProperties.DeviceID = DeviceID;
-            device.DeviceProperties.HubEnabledState = true;
-            device.DeviceProperties.CreatedTime = DateTime.UtcNow;
-            device.DeviceProperties.DeviceState = "normal";
-            device.DeviceProperties.UpdatedTime = null;
-
-            // Your device information here
-            device.DeviceProperties.Manufacturer = "MyCompany";
-            device.DeviceProperties.ModelNumber = "MyModel";
-            device.DeviceProperties.SerialNumber = "MySerial";
-            device.DeviceProperties.FirmwareVersion = "1.0";
-            device.DeviceProperties.Platform = "MyPlatfrom";
-            device.DeviceProperties.Processor = "I3";
-            device.DeviceProperties.InstalledRAM = "64MB";
-
-            // Simlated localtion
-            device.DeviceProperties.Latitude = 47.659159;
-            device.DeviceProperties.Longitude = -122.141515;
-
-            // Telemery data descriptor
-            device.Telemetry = new List<dynamic>();
-            device.Telemetry.Add(new { Name = "Temperature", DisplayName= "Temperature", Type = "double" });
-            device.Telemetry.Add(new { Name= "Humidity", DisplayName= "Humidity", Type = "double" });
-
-            // Message type for RemoteMonitoring
+            device.DeviceProperties = new DevicePropertiesClass()
+            {
+                DeviceID = DeviceID,
+                HubEnabledState = true
+            };            
+            device.IsSimulatedDevice = false;
             device.Version = "1.0";
             device.ObjectType = "DeviceInfo";
 
-            // Remove the system properties from a device, to better emulate the behavior of real devices when sending device info messages.
-            device.SystemProperties = null;
+            // Telemery data descriptor
+            device.Telemetry = new List<RemoteMonitorTelemetryMetaClass>();
+            device.Telemetry.Add(new RemoteMonitorTelemetryMetaClass (){ Name = "Temperature", DisplayName = "Temperature", Type = "double" });
+            device.Telemetry.Add(new RemoteMonitorTelemetryMetaClass (){ Name = "Humidity", DisplayName = "Humidity", Type = "double" });
 
             if (!token.IsCancellationRequested)
             {
@@ -108,7 +202,7 @@ namespace RMDeviceSample
 
         public static async Task SendMonitorDataAsync(CancellationToken token, Func<object, Task> sendMessageAsync)
         {
-            var monitorData = new RemoteMonitorTelemetryData();
+            var monitorData = new RemoteMonitorTelemetryDataClass();
             while (!token.IsCancellationRequested)
             {
                 if (TelemetryActive)
@@ -142,11 +236,11 @@ namespace RMDeviceSample
                 {
                     await Client.SendEventAsync(message);
                 }
-                catch(Exception ex)
+                catch (Exception ex)
                 {
                     Console.Write($"Exception raised while device {DeviceID} trying to send events: {ex.Message}");
                 }
-                
+
             }
         }
 
@@ -191,20 +285,51 @@ namespace RMDeviceSample
                 Console.WriteLine("Connecting to hub");
                 Client = DeviceClient.CreateFromConnectionString(DeviceConnectionString, transportType);
                 Client.SetDesiredPropertyUpdateCallback(OnDesiredPropertyChanged, null).Wait();
+                // Register handlers for direct methods
+                var method = Client.SetMethodHandlerAsync("InitiateFirmwareUpdate", OnInitiateFirmwareUpdate, null);
+                method = Client.SetMethodHandlerAsync("Reboot", OnReboot, null);
 
-                Console.WriteLine("Retrieving twin");
-                var twinTask = Client.GetTwinAsync();
-                twinTask.Wait();
-                var twin = twinTask.Result;
-
-                Console.WriteLine("initial twin value received:");
-                Console.WriteLine(JsonConvert.SerializeObject(twin));
-
-                Console.WriteLine("Sending app start time as reported property");
-                TwinCollection reportedProperties = new TwinCollection();
-                reportedProperties["DateTimeLastAppLaunch"] = DateTime.Now;
-
-                Client.UpdateReportedPropertiesAsync(reportedProperties);
+                Console.WriteLine("Send reported properties to IoT Hub");
+                Twin reportedProperties = new Twin(DeviceID);
+                TwinCollection reported = reportedProperties.Properties.Reported;
+                {
+                    reported["Device"] = new ReportedDevicePropertiesClass()
+                    {
+                        DeviceState = "normal",
+                        Location = new LocaltionPropertiesClass()
+                        {
+                            Latitude = 47.659159,
+                            Longitude = -122.141515
+                        }
+                    };
+                    reported["Conifg"] = new ConifgPropertiesClass()
+                    {
+                        TelemetryInterval = 45,
+                        TemperatureMeanValue = 56.7,
+                    };
+                    reported["System"] = new SystemPropertiesClass()
+                    {
+                        Manufacturer = "Contoso Inc.",
+                        FirmwareVersion = "2.22",
+                        InstalledRAM = "8 MB",
+                        ModelNumber = "DB-14",
+                        Platform = "Plat 9.75",
+                        Processor = "i3-9",
+                        SerialNumber = "SER99"
+                    };
+                    reported["Location"] = new LocaltionPropertiesClass()
+                    {
+                        Latitude = 47.659159,
+                        Longitude = -122.141515
+                    };
+                    reported["SupportedMethods"] = new TwinCollection();
+                    {
+                        var SupportedMethods = reported["SupportedMethods"];
+                        SupportedMethods["Reboot"] = "Reboot the device";
+                        SupportedMethods["InitiateFirmwareUpdate--FwPackageURI-string"] = "Updates device Firmware. Use parameter FwPackageURI to specifiy the URI of the firmware file";
+                    }
+                }
+                Client.UpdateReportedPropertiesAsync(reported);
 
                 Console.WriteLine("Sending device infomation to RM");
                 var deviceTask = SendDeviceInfoAsync(cts.Token, async (object eventData) =>
@@ -217,7 +342,6 @@ namespace RMDeviceSample
                 {
                     await SendEventAsync(Guid.NewGuid(), eventData);
                 });
-                monitorTask.Wait();
 
             }
             catch (AggregateException ex)
